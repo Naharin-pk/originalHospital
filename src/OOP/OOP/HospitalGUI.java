@@ -1,4 +1,3 @@
-
 package OOP.OOP;
 
 import javax.swing.*;
@@ -14,6 +13,7 @@ public class HospitalGUI {
 
     JFrame frame;
     String selectedDepartment;
+
     private final Color backgroundColor = new Color(242, 246, 252);
     private final Color primaryColor = new Color(35, 80, 130);
     private final Color purpleColor = new Color(110, 90, 170);
@@ -626,14 +626,14 @@ public class HospitalGUI {
 
         JButton backButton = createButton("BACK", purpleColor);
         JButton homeButton = createButton("HOME", purpleColor);
-        JButton refreshButton = createButton("REFRESH ANALYSIS", blueColor);
+        JButton demandAlertsButton = createButton("DEMAND ALERTS", blueColor);
         JButton saveButton = createButton("SAVE REPORT", greenColor);
 
         JPanel buttons = new JPanel();
         buttons.setBackground(backgroundColor);
         buttons.add(backButton);
         buttons.add(homeButton);
-        buttons.add(refreshButton);
+        buttons.add(demandAlertsButton);
         buttons.add(saveButton);
 
         mainPanel.add(buttons, BorderLayout.SOUTH);
@@ -644,8 +644,8 @@ public class HospitalGUI {
         // HOME returns to the first page
         homeButton.addActionListener(e -> showHome());
 
-        // REFRESH loads the latest database records
-        refreshButton.addActionListener(e -> analysis());
+        // DEMAND ALERTS checks surgery demand using the user's limit
+        demandAlertsButton.addActionListener(e -> showDemandAlerts());
 
         // SAVE REPORT writes the displayed report to a text file
         saveButton.addActionListener(e -> {
@@ -682,6 +682,134 @@ public class HospitalGUI {
         frame.setContentPane(mainPanel);
         frame.revalidate();
         frame.repaint();
+    }
+
+    // DEMAND ALERTS: USER-ENTERED DEMAND LIMIT
+    void showDemandAlerts() {
+        String input = JOptionPane.showInputDialog(
+                frame,
+                "Enter the total demand limit:"
+        );
+
+        // Stop if the user cancels or leaves the input empty
+        if (input == null || input.trim().isEmpty()) {
+            return;
+        }
+
+        int limit;
+
+        try {
+            limit = Integer.parseInt(input.trim());
+
+            if (limit < 0) {
+                JOptionPane.showMessageDialog(
+                        frame,
+                        "Please enter a non-negative limit.",
+                        "Invalid Limit",
+                        JOptionPane.WARNING_MESSAGE
+                );
+                return;
+            }
+
+        } catch (NumberFormatException ex) {
+            JOptionPane.showMessageDialog(
+                    frame,
+                    "Please enter a valid whole number.",
+                    "Invalid Limit",
+                    JOptionPane.WARNING_MESSAGE
+            );
+            return;
+        }
+
+        String sql = "SELECT surgery_name, performed_count, unmet_count " +
+                "FROM demand WHERE department = ? ORDER BY surgery_name";
+
+        StringBuilder result = new StringBuilder();
+
+        result.append("DEMAND ALERTS - ")
+                .append(selectedDepartment).append("\n");
+
+        result.append("Total demand limit: ")
+                .append(limit).append("\n\n");
+
+        boolean recordsFound = false;
+
+        try (Connection con = getConnection();
+             PreparedStatement ps = con.prepareStatement(sql)) {
+
+            ps.setString(1, selectedDepartment);
+
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    recordsFound = true;
+
+                    String surgeryName = rs.getString("surgery_name");
+                    int performedCount = rs.getInt("performed_count");
+                    int unmetCount = rs.getInt("unmet_count");
+
+                    int totalDemand = performedCount + unmetCount;
+
+                    double unmetPercentage = totalDemand == 0
+                            ? 0.0
+                            : (unmetCount * 100.0) / totalDemand;
+
+                    result.append("Surgery: ")
+                            .append(surgeryName).append("\n");
+
+                    result.append("Total demand: ")
+                            .append(totalDemand).append("\n");
+
+                    result.append(String.format(
+                            "Unmet demand: %d (%.2f%%)\n",
+                            unmetCount, unmetPercentage
+                    ));
+
+                    if (totalDemand > limit && unmetPercentage > 50) {
+                        result.append("HIGH UNMET DEMAND DETECTED\n");
+
+                        result.append(
+                                "This may indicate a capacity constraint " +
+                                        "and could warrant further investigation.\n"
+                        );
+
+                    } else {
+                        result.append("No high demand detected for ")
+                                .append(surgeryName).append(".\n");
+                    }
+
+                    result.append("----------------------------------------\n");
+                }
+            }
+
+            if (!recordsFound) {
+                result.append("No surgical demand records found for ")
+                        .append(selectedDepartment).append(".");
+            }
+
+            JTextArea alertArea = new JTextArea(
+                    result.toString(), 18, 45
+            );
+
+            alertArea.setEditable(false);
+            alertArea.setFont(new Font("Monospaced", Font.PLAIN, 13));
+            alertArea.setLineWrap(true);
+            alertArea.setWrapStyleWord(true);
+            alertArea.setMargin(new Insets(12, 12, 12, 12));
+            alertArea.setBackground(Color.WHITE);
+            alertArea.setForeground(new Color(35, 45, 60));
+
+            JScrollPane scrollPane = new JScrollPane(alertArea);
+
+            JOptionPane.showMessageDialog(
+                    frame,
+                    scrollPane,
+                    "Demand Alerts - " + selectedDepartment,
+                    JOptionPane.INFORMATION_MESSAGE
+            );
+
+        } catch (SQLException ex) {
+            showDatabaseError(ex);
+        }
     }
 
     // DATABASE ERROR MESSAGE

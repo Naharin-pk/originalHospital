@@ -178,7 +178,4 @@ public class Analysis
         return demandpercentages;
     }
 
-
-
-hub
 }
